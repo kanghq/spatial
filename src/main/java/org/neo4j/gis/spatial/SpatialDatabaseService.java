@@ -29,6 +29,7 @@ import org.neo4j.gis.spatial.rtree.Listener;
 import org.neo4j.gis.spatial.encoders.Configurable;
 import org.neo4j.gis.spatial.encoders.SimplePointEncoder;
 import org.neo4j.graphdb.*;
+import org.neo4j.kernel.api.exceptions.schema.AlreadyConstrainedException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import com.vividsolutions.jts.geom.Geometry;
@@ -56,7 +57,7 @@ public class SpatialDatabaseService implements Constants {
 		this.database = database;
 	}
 
-	
+
 	// Public methods
 
     private Node getOrCreateRootFrom(Node ref, RelationshipType relType) {
@@ -76,6 +77,9 @@ public class SpatialDatabaseService implements Constants {
     }
 
     protected Node getSpatialRoot() {
+    	
+    	
+    	
         if (spatialRoot == null || !isValid(spatialRoot)) {
             spatialRoot = ReferenceNodes.getReferenceNode(database, "spatial_root");
         }
@@ -300,11 +304,11 @@ public class SpatialDatabaseService implements Constants {
 
 	public Layer createLayer(String name, Class<? extends GeometryEncoder> geometryEncoderClass, Class<? extends Layer> layerClass,
 			String encoderConfig, CoordinateReferenceSystem crs) {
+		
         Transaction tx = database.beginTx();
         try {
             if (containsLayer(name))
                 throw new SpatialDatabaseException("Layer " + name + " already exists");
-
             Layer layer = DefaultLayer.makeLayerAndNode(this, name, geometryEncoderClass, layerClass);
             getSpatialRoot().createRelationshipTo(layer.getLayerNode(), SpatialRelationshipTypes.LAYER);
 			if (encoderConfig != null && encoderConfig.length() > 0) {

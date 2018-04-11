@@ -35,16 +35,21 @@ import org.neo4j.gis.spatial.osm.OSMImporter;
 import org.neo4j.gis.spatial.pipes.GeoPipeFlow;
 import org.neo4j.gis.spatial.pipes.GeoPipeline;
 import org.neo4j.gis.spatial.rtree.ProgressLoggingListener;
+import org.neo4j.graphdb.ConstraintViolationException;
 import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.PropertyContainer;
+import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.spatial.CRS;
+import org.neo4j.helpers.collection.Iterators;
 import org.neo4j.kernel.api.proc.ProcedureSignature;
 import org.neo4j.kernel.impl.proc.Procedures;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import org.neo4j.logging.Log;
 import org.neo4j.procedure.Context;
+import org.neo4j.procedure.Mode;
 import org.neo4j.procedure.Name;
 import org.neo4j.procedure.PerformsWrites;
 import org.neo4j.procedure.Procedure;
@@ -276,11 +281,69 @@ public class SpatialProcedures {
         return Stream.of(new NodeResult(node));
     }
 
-    @Procedure("spatial.addWKTLayer")
-    @PerformsWrites
+    
+
+    @Procedure(name = "spatial.constrains", mode = Mode.SCHEMA)
+    public Stream<NameResult> addConstrains() {
+    	Transaction ptx = db.beginTx();
+    	Node res = null;
+    	Stream.Builder<NameResult> builder = null;
+		try {
+			
+					db.execute("CREATE CONSTRAINT ON (n:ReferenceNode) ASSERT n.name IS UNIQUE");
+					
+			      
+			
+			
+	
+	
+		ptx.success();
+		} catch(Exception e) {e.printStackTrace();}
+		//catch(ConstraintViolationException e) {
+			/*
+			if(e==null||!e.getMessage().contains("already exists")) {
+				throw e;
+			}
+			
+			
+		}*/finally {
+			ptx.close();
+			System.out.println("constrains done");
+		}
+		Transaction tx = db.beginTx();
+		  builder = Stream.builder();
+		  Result result = db.execute("call db.indexes()");
+		  String str = Iterators.single(result.<String>columnAs("description"));
+			builder.accept(new NameResult(str, str));
+			tx.success();
+			tx.close();
+		
+
+        return builder.build();
+    }
+
+    
+    
+    
+    
+    
+    
+    @Procedure(name = "spatial.addWKTLayer", mode = Mode.SCHEMA)
     public Stream<NodeResult> addWKTLayer(@Name("name") String name,
                                                @Name("nodePropertyName") String nodePropertyName) {
-        return addLayerOfType(name, "WKT", nodePropertyName);
+    	Stream<NodeResult> node = null;
+
+    	Transaction tx = db.beginTx();
+    	addConstrains();
+    	tx.success();
+    	tx.close();
+    	try{
+    	 
+    	 node = addLayerOfType(name, "WKT", nodePropertyName);
+    	} catch(Exception e) {
+    		e.printStackTrace();
+    	}
+        return node;
     }
 
     // todo do we need this?
@@ -336,6 +399,17 @@ public class SpatialProcedures {
         WKTReader reader = new WKTReader(layer.getGeometryFactory());
         return streamNode(addGeometryWkt(layer,reader,geometryWKT));
     }
+    
+    @Procedure("spatial.addWKTWithProperties")
+    @PerformsWrites
+    public Stream<NodeResult> addGeometryWKTToLayer(@Name("layerName") String name, @Name("geometry") String geometryWKT, @Name("properties") List<String> properties, @Name("values") List<String> values) throws ParseException {
+        EditableLayer layer = getEditableLayerOrThrow(name);
+        WKTReader reader = new WKTReader(layer.getGeometryFactory());
+        String[] pro = properties.toArray(new String[properties.size()]);
+        String[] val = values.toArray(new String[values.size()]);
+        return streamNode(addGeometryWkt(layer,reader,geometryWKT, pro, val));
+    }
+    
 
     // todo do we want to return anything ? or just a count?
     @Procedure("spatial.addWKTs")
@@ -350,6 +424,15 @@ public class SpatialProcedures {
         try {
             Geometry geometry = reader.read(geometryWKT);
             return layer.add(geometry).getGeomNode();
+        } catch (ParseException e) {
+            throw new RuntimeException("Error parsing geometry: "+geometryWKT,e);
+        }
+    }
+    
+    private Node addGeometryWkt(EditableLayer layer, WKTReader reader, String geometryWKT, String[] pro, String[] val) {
+        try {
+            Geometry geometry = reader.read(geometryWKT);
+            return layer.add(geometry, pro, val).getGeomNode();
         } catch (ParseException e) {
             throw new RuntimeException("Error parsing geometry: "+geometryWKT,e);
         }
